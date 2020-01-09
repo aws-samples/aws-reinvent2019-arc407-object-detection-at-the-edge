@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<!-- saved from url=(0078)file:///Users/sunderps/Downloads/ARC407-ObjectDetectionAtTheEdge.md%20(2).html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><title>ARC407-ObjectDetectionAtTheEdge.md</title><style></style></head><body id="preview">
+<p class="has-line-data" data-line-start="0" data-line-end="2">Today, we will be building an application to detect animals at the edge. We will use an EC2 instance as our target edge device, but this device can be anything like a Raspberry Pi, NVIDIA TX2, Nano etc.<br>
+To achieve this, we require a Machine Learning model that can detect animals and the hardware to run the application on.</p>
+<p class="has-line-data" data-line-start="3" data-line-end="4"><img src="./ARC407_files/Architecture.png" alt="logo"></p>
+<h2 class="code-line" data-line-start="7" data-line-end="8"><a id="Agenda_7"></a>Agenda</h2>
+<blockquote>
+<p class="has-line-data" data-line-start="8" data-line-end="9">Module 0: Set up Infrastructure</p>
+</blockquote>
+<blockquote>
+<p class="has-line-data" data-line-start="10" data-line-end="11">Module 1: Build an OD(Object Detection) Model</p>
+</blockquote>
+<blockquote>
+<p class="has-line-data" data-line-start="12" data-line-end="13">Module 2: Build Lambda application</p>
+</blockquote>
+<blockquote>
+<p class="has-line-data" data-line-start="14" data-line-end="15">Module 3: Set up Greengrass group, resources with lambda+ML and download certs</p>
+</blockquote>
+<blockquote>
+<p class="has-line-data" data-line-start="16" data-line-end="17">Module 4: Ready to Run Inference</p>
+</blockquote>
+<h2 class="code-line" data-line-start="18" data-line-end="19"><a id="Requirements_18"></a>Requirements</h2>
+<p class="has-line-data" data-line-start="19" data-line-end="20">This workshop requires,</p>
+<ol>
+<li class="has-line-data" data-line-start="21" data-line-end="22">AWS Account</li>
+<li class="has-line-data" data-line-start="22" data-line-end="23">Laptop</li>
+<li class="has-line-data" data-line-start="23" data-line-end="25">Browser</li>
+</ol>
+<p class="has-line-data" data-line-start="25" data-line-end="26">—————————————————————————————————————————————————————————————————————————————————————————————</p>
+<h2 class="code-line" data-line-start="27" data-line-end="28"><a id="Module_0_Set_up_Infrastructure_27"></a>Module 0: Set up Infrastructure</h2>
+<h4 class="code-line" data-line-start="29" data-line-end="30"><a id="SSH_Key_Pair_Instructions_29"></a>SSH Key Pair Instructions</h4>
+<p class="has-line-data" data-line-start="30" data-line-end="31">At the top right hand corner of the AWS Console, you’ll see a Support dropdown. To the left of that is the region selection dropdown. Choose US West (Oregon).</p>
+<p class="has-line-data" data-line-start="32" data-line-end="33">Then you’ll need to create an SSH key pair which will be used to login to the instances once provisioned. Go to the EC2 Dashboard and click on Key Pairs in the left menu under Network &amp; Security. Click Create Key Pair, provide a name (“reinvent”) when prompted, and click Create. Once created, the private key in the form of reinvent.pem file will be automatically downloaded.</p>
+<p class="has-line-data" data-line-start="34" data-line-end="35">If you’re using linux or mac, change the permissions of the .pem file to be less open.</p>
+<pre><code class="has-line-data" data-line-start="36" data-line-end="38">$ chmod 400 reinvent.pem
+</code></pre>
+<p class="has-line-data" data-line-start="38" data-line-end="39">If you’re on windows you’ll need to convert the .pem file to .ppk to work with putty. Here is a link to instructions for the file conversion - <a href="http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/putty.html">http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/putty.html</a></p>
+<h4 class="code-line" data-line-start="40" data-line-end="41"><a id="Context_40"></a>Context</h4>
+<p class="has-line-data" data-line-start="41" data-line-end="42">We will be creating Infrastructure for training an Object Detection model on Sagemaker and also setting up an EC2 Instance that emulates edge device with all the required dependencies (greengrass, opencv, mxnet) to run the application.</p>
+<p class="has-line-data" data-line-start="43" data-line-end="44">This repository has 2 Yaml files.</p>
+<ul>
+<li class="has-line-data" data-line-start="45" data-line-end="46">Setting up Sagemaker Notebook instance - setup_sagemaker_notebook.yml</li>
+<li class="has-line-data" data-line-start="46" data-line-end="48">Setting up EC2 Target Instance - setup_greengrass_on_ec2.yml</li>
+</ul>
+<ol>
+<li class="has-line-data" data-line-start="48" data-line-end="49">go to AWS Cloudformation console &gt; Create stack (With New Resources(standard)).</li>
+<li class="has-line-data" data-line-start="49" data-line-end="50">click on <em>Upload a template file</em></li>
+<li class="has-line-data" data-line-start="50" data-line-end="51">Upload setup_sagemaker_notebook.yml from your downloads</li>
+<li class="has-line-data" data-line-start="51" data-line-end="52">Click Next</li>
+<li class="has-line-data" data-line-start="52" data-line-end="53">Write <em>ReInventSagemakerNotebook</em> in Name and click Next.</li>
+<li class="has-line-data" data-line-start="53" data-line-end="54">Choose defaults and click Next.</li>
+<li class="has-line-data" data-line-start="54" data-line-end="55">Mark the checkbox - <em>I acknowledge that AWS CloudFormation might create IAM resources.</em> and click <em>Create</em></li>
+<li class="has-line-data" data-line-start="55" data-line-end="58">Repeat steps 1 - 8 for <em>setup_greegrass_on_ec2.yml</em> as well. Name the stack as <em>ReinventEC2Target</em>
+<ol>
+<li class="has-line-data" data-line-start="56" data-line-end="58">For <em>myKeyPair</em>, choose <em>reinvent</em></li>
+</ol>
+</li>
+</ol>
+<p class="has-line-data" data-line-start="58" data-line-end="59">Wait for both cloud formation stacks to complete. Once the <em>ReInventSagemakerNotebook</em> is complete, goto next Step</p>
+<p class="has-line-data" data-line-start="60" data-line-end="62">—————————————————————————————————————————————————————————————————————————————————————————————<br>
+<img src="./ARC407_files/Module1.png" alt="logo1"></p>
+<h2 class="code-line" data-line-start="65" data-line-end="66"><a id="Module_1_Build_an_Object_Detection_Model_65"></a>Module 1: Build an Object Detection Model</h2>
+<p class="has-line-data" data-line-start="67" data-line-end="68">Let us create an Object Detection model for identifying these 6 animals - [‘bird’, ‘cat’, ‘cow’, ‘dog’, ‘horse’, ‘sheep’]</p>
+<ol>
+<li class="has-line-data" data-line-start="69" data-line-end="70">To access Sagemaker Jupyter Notebook, click on <em>ReInventSagemakerNotebook</em> Outputs, click on <em>SageMakeInstance</em> URL or goto Sagemaker console &gt; Jupyter Notebooks &gt; Open Jupyter</li>
+<li class="has-line-data" data-line-start="70" data-line-end="71">Go to Sagemaker Examples</li>
+<li class="has-line-data" data-line-start="71" data-line-end="72">click “use” button on “object_detection_incremental_training.ipynb”</li>
+<li class="has-line-data" data-line-start="72" data-line-end="73">Goto Files&gt; object_detection_pascalvoc_coco_2019-12-19 folder</li>
+<li class="has-line-data" data-line-start="73" data-line-end="74">Upload this jupyter book from your machine - “animal_detection_recordio_format.ipynb”</li>
+<li class="has-line-data" data-line-start="74" data-line-end="75">While we train the model, we can do other modules in parallel. Jump to Module 2.</li>
+<li class="has-line-data" data-line-start="75" data-line-end="77">After the training completes, come back to this module and run cells until section <em>Hosting</em>. We are done with this module here.</li>
+</ol>
+<p class="has-line-data" data-line-start="77" data-line-end="79">—————————————————————————————————————————————————————————————————————————————————————————————<br>
+<img src="./ARC407_files/Module2.png" alt="logo2"></p>
+<h2 class="code-line" data-line-start="82" data-line-end="83"><a id="Module_2_Build_Lambda_application_for_counting_82"></a>Module 2: Build Lambda application for counting</h2>
+<p class="has-line-data" data-line-start="84" data-line-end="85">Goto AWS Lambda Console, and lets create a lambda function for detecting animals using the model and count them.</p>
+<ol>
+<li class="has-line-data" data-line-start="86" data-line-end="87">Click on Create Function</li>
+<li class="has-line-data" data-line-start="87" data-line-end="88">Author from scratch</li>
+<li class="has-line-data" data-line-start="88" data-line-end="89">Call it <em>greengrassObjectDetection</em></li>
+<li class="has-line-data" data-line-start="89" data-line-end="90">Runtime: Python 2.7</li>
+<li class="has-line-data" data-line-start="90" data-line-end="91">For the role, click <em>Use an existing role</em> &gt; choose that one with <em>ReInventEC2Target-LambdaExecution</em> role</li>
+<li class="has-line-data" data-line-start="91" data-line-end="92">Click on <em>create function</em></li>
+<li class="has-line-data" data-line-start="92" data-line-end="93">Now we need to upload the code inside Lambda function with our counting application. Zip the files inside greengrass-ml-lambda folder. Make sure you have installed &amp; packaged dependencies in the requirements.txt - greengrass-ml-lambda.zip</li>
+<li class="has-line-data" data-line-start="93" data-line-end="94">In the Lambda Console, under <em>Function Code</em> &gt; <em>Code entry type</em> &gt; Choose <em>upload a zip file</em></li>
+<li class="has-line-data" data-line-start="94" data-line-end="95">upload the zip file that you downloaded in step 7.</li>
+<li class="has-line-data" data-line-start="95" data-line-end="96">Set <em>Handler : greengrassObjectDetection.function_handler</em></li>
+<li class="has-line-data" data-line-start="96" data-line-end="97">Let us Save and publish it.</li>
+<li class="has-line-data" data-line-start="97" data-line-end="98">Click Save</li>
+<li class="has-line-data" data-line-start="98" data-line-end="99">Actions</li>
+<li class="has-line-data" data-line-start="99" data-line-end="100">Publish new version</li>
+<li class="has-line-data" data-line-start="100" data-line-end="101">Leave&nbsp;Version description&nbsp;empty</li>
+<li class="has-line-data" data-line-start="101" data-line-end="102">Publish</li>
+<li class="has-line-data" data-line-start="102" data-line-end="103">Actions</li>
+<li class="has-line-data" data-line-start="103" data-line-end="104">Create alias</li>
+<li class="has-line-data" data-line-start="104" data-line-end="105">Name:&nbsp;dev</li>
+<li class="has-line-data" data-line-start="105" data-line-end="106">Version:&nbsp;1</li>
+<li class="has-line-data" data-line-start="106" data-line-end="108">Create</li>
+</ol>
+<p class="has-line-data" data-line-start="108" data-line-end="111">Goto Module 3.<br>
+—————————————————————————————————————————————————————————————————————————————————————————————<br>
+<img src="./ARC407_files/Module3.png" alt="logo3"></p>
+<h2 class="code-line" data-line-start="113" data-line-end="114"><a id="Module_3_Set_up_Greengrass_group_resources_with_lambdaML_and_download_certs_113"></a>Module 3: Set up Greengrass group, resources with lambda+ML and download certs</h2>
+<p class="has-line-data" data-line-start="115" data-line-end="116">We need to create a Greengrass group to manage devices and deploy our application, model to the device.</p>
+<h3 class="code-line" data-line-start="117" data-line-end="118"><a id="Create_a_Greengrass_group_117"></a>Create a Greengrass group</h3>
+<p class="has-line-data" data-line-start="119" data-line-end="120">Go to the AWS IoT Greengrass console</p>
+<ol>
+<li class="has-line-data" data-line-start="120" data-line-end="121">Groups</li>
+<li class="has-line-data" data-line-start="121" data-line-end="122">Create Group</li>
+<li class="has-line-data" data-line-start="122" data-line-end="123">Use easy creation</li>
+<li class="has-line-data" data-line-start="123" data-line-end="124">Group Name:&nbsp;greengrassReInvent</li>
+<li class="has-line-data" data-line-start="124" data-line-end="125">Next</li>
+<li class="has-line-data" data-line-start="125" data-line-end="126">Leave Name for Core untouched</li>
+<li class="has-line-data" data-line-start="126" data-line-end="127">Next</li>
+<li class="has-line-data" data-line-start="127" data-line-end="128">Create Group and Core</li>
+<li class="has-line-data" data-line-start="128" data-line-end="129">Download these resources as a tar.gz (A tar.gz-file which contains key/certificate and configuration for Greengrass)</li>
+<li class="has-line-data" data-line-start="129" data-line-end="131">Finish (you might need to scroll down to find this button)&nbsp;!!! Don’t forget to click “Finish”. Otherwise your group will not be created !!!<br>
+Verify in the AWS IoT console that your Greengrass Group has been created</li>
+</ol>
+<ul>
+<li class="has-line-data" data-line-start="131" data-line-end="133">Greengrass -&gt; Groups</li>
+</ul>
+<h3 class="code-line" data-line-start="133" data-line-end="134"><a id="Assign_the_MLInference_Lambda_to_your_Greengrass_Group_133"></a>Assign the ML-Inference Lambda to your Greengrass Group</h3>
+<h5 class="code-line" data-line-start="135" data-line-end="136"><a id="Context_135"></a>Context</h5>
+<p class="has-line-data" data-line-start="136" data-line-end="139">For Greengrass to use a Lambda function you need to assign the function created in AWS Lambda to your Greengrass Group.<br>
+The Lambda function on Greengrass will be configured as a long running function because it should scan a directory for images regularly.<br>
+Go to the&nbsp;AWS Greengrass console</p>
+<ol>
+<li class="has-line-data" data-line-start="139" data-line-end="140">Groups</li>
+<li class="has-line-data" data-line-start="140" data-line-end="141">Click&nbsp;greengrassReInvent</li>
+<li class="has-line-data" data-line-start="141" data-line-end="142">Lambdas</li>
+<li class="has-line-data" data-line-start="142" data-line-end="143">Add Lambda</li>
+<li class="has-line-data" data-line-start="143" data-line-end="144">Use existing Lambda</li>
+<li class="has-line-data" data-line-start="144" data-line-end="145">Select&nbsp;greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="145" data-line-end="146">Next</li>
+<li class="has-line-data" data-line-start="146" data-line-end="147">Select&nbsp;Alias: dev</li>
+<li class="has-line-data" data-line-start="147" data-line-end="148">Finish</li>
+<li class="has-line-data" data-line-start="148" data-line-end="149">Click&nbsp;…&nbsp;-&gt;&nbsp;Edit configuration&nbsp;for the Lambda&nbsp;greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="149" data-line-end="150">Memory limit:&nbsp;1024 MB</li>
+<li class="has-line-data" data-line-start="150" data-line-end="151">Check under Lambda lifecycle &gt; Make this function long-lived and keep it running indefinitely</li>
+<li class="has-line-data" data-line-start="151" data-line-end="153">Click Update</li>
+</ol>
+<h3 class="code-line" data-line-start="153" data-line-end="154"><a id="Assign_Resources_to_your_Greengrass_Group_153"></a>Assign Resources to your Greengrass Group</h3>
+<h5 class="code-line" data-line-start="155" data-line-end="156"><a id="Context_155"></a>Context</h5>
+<p class="has-line-data" data-line-start="156" data-line-end="158">The object detection model which you created using SageMaker must be assigned as a machine learning resource to the Greengrass Group in order to being consumed by the Lambda function. Furthermore the directory which will be scanned for images must be assigned as a local resource.<br>
+In the&nbsp;AWS Greengrass console</p>
+<ol>
+<li class="has-line-data" data-line-start="158" data-line-end="159">Groups</li>
+<li class="has-line-data" data-line-start="159" data-line-end="160">greengrassReInvent</li>
+<li class="has-line-data" data-line-start="160" data-line-end="161">Resources</li>
+<li class="has-line-data" data-line-start="161" data-line-end="162">Add a local resource</li>
+<li class="has-line-data" data-line-start="162" data-line-end="163">Resource name:&nbsp;ImageDirectory</li>
+<li class="has-line-data" data-line-start="163" data-line-end="164">Check&nbsp;Volume</li>
+<li class="has-line-data" data-line-start="164" data-line-end="165">Source path:&nbsp;/greengrass-ml/images</li>
+<li class="has-line-data" data-line-start="165" data-line-end="166">Destination path:&nbsp;/images</li>
+<li class="has-line-data" data-line-start="166" data-line-end="167">Check&nbsp;Automatically add OS group permissions of the Linux group that owns the resource</li>
+<li class="has-line-data" data-line-start="167" data-line-end="168">Lambda function affiliations: Select&nbsp;greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="168" data-line-end="169">Check&nbsp;Read and write access</li>
+<li class="has-line-data" data-line-start="169" data-line-end="170">Save</li>
+<li class="has-line-data" data-line-start="170" data-line-end="171">Click the&nbsp;Machine Learning&nbsp;tab</li>
+<li class="has-line-data" data-line-start="171" data-line-end="172">Add a machine learning resource</li>
+<li class="has-line-data" data-line-start="172" data-line-end="173">Resource name:&nbsp;ObjectDetection</li>
+<li class="has-line-data" data-line-start="173" data-line-end="174">If the model training is still in progress, we will use an existing model for now. If the model training is complete, skip steps 17 to 22.</li>
+<li class="has-line-data" data-line-start="174" data-line-end="175">Choose <em>Upload a model in S3</em> &gt; click on Select</li>
+<li class="has-line-data" data-line-start="175" data-line-end="176">We will use an already trained model for now, and swap it if your training finishes in time. go and pick trained_model.tar.gz from here - s3://reinventsagemakernotebook-iotwss3bucket-&lt;xxxxxxxx&gt;/trained_model.tar.gz</li>
+<li class="has-line-data" data-line-start="176" data-line-end="177">Local path: /models/object-detection</li>
+<li class="has-line-data" data-line-start="177" data-line-end="178">Lambda function affiliations: Select&nbsp;greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="178" data-line-end="179">Leave&nbsp;Read-only access</li>
+<li class="has-line-data" data-line-start="179" data-line-end="181">Click Save</li>
+</ol>
+<p class="has-line-data" data-line-start="181" data-line-end="182">If the Sagemaker Training finishes, do this -</p>
+<ol>
+<li class="has-line-data" data-line-start="182" data-line-end="183">Go back to Jupyter Notebook, run the cells that upload the deployable model to S3.</li>
+<li class="has-line-data" data-line-start="183" data-line-end="184">In the greengrass Console, continue these steps where you left off at Step 16 previously.</li>
+<li class="has-line-data" data-line-start="184" data-line-end="185">Choose <em>Upload a model in S3</em> &gt; click on Select. Goto  S3 / reinventsagemakernotebook-iotwss3bucket-&lt;xxxxxxxx&gt; / DEMO-AnimalDetection / output / deploy / deploy_model.tar.gz</li>
+<li class="has-line-data" data-line-start="185" data-line-end="186">Local path:&nbsp;/models/object-detection</li>
+<li class="has-line-data" data-line-start="186" data-line-end="187">Lambda function affiliations: Select&nbsp;greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="187" data-line-end="188">Leave&nbsp;Read-only access</li>
+<li class="has-line-data" data-line-start="188" data-line-end="190">Save</li>
+</ol>
+<p class="has-line-data" data-line-start="190" data-line-end="192">—————————————————————————————————————————————————————————————————————————————————————————————<br>
+<img src="./ARC407_files/Module4.png" alt="logo4"></p>
+<h2 class="code-line" data-line-start="194" data-line-end="195"><a id="Module_4_Ready_to_Run_Inference_194"></a>Module 4: Ready to Run Inference.</h2>
+<p class="has-line-data" data-line-start="196" data-line-end="197">You downloaded the key <em>reinvent.pem</em> in Module 0. We will use that for this module.</p>
+<p class="has-line-data" data-line-start="198" data-line-end="199">Find the EC2 Instance Public IP and then do the following. IP can be found under Cloudformation &gt; Stacks &gt; ReInventEC2Target &gt; Output &gt; EC2IPAddress.</p>
+<p class="has-line-data" data-line-start="200" data-line-end="201">Let us first copy the downloaded certs into the target device, in this case the EC2 instance that we created</p>
+<pre><code class="has-line-data" data-line-start="203" data-line-end="205">scp -i reinvent.pem &lt;certsID&gt;-setup.tar.gz ubuntu@&lt;EC2-PUBLIC-IP&gt;:~/
+</code></pre>
+<p class="has-line-data" data-line-start="206" data-line-end="207">Let us SSH into the machine now,</p>
+<pre><code class="has-line-data" data-line-start="208" data-line-end="210">ssh -i reinvent.pem ubuntu@&lt;EC2-PUBLIC-IP&gt;
+</code></pre>
+<p class="has-line-data" data-line-start="210" data-line-end="211">extract the certs into green grass directory</p>
+<pre><code class="has-line-data" data-line-start="212" data-line-end="214">sudo tar -xvzf &lt;certsID&gt;-setup.tar.gz -C /greengrass
+</code></pre>
+<p class="has-line-data" data-line-start="214" data-line-end="215">change to Root user</p>
+<pre><code class="has-line-data" data-line-start="216" data-line-end="218">sudo su -
+</code></pre>
+<p class="has-line-data" data-line-start="218" data-line-end="219">Let us create some directories, one for storing the images.</p>
+<pre><code class="has-line-data" data-line-start="220" data-line-end="223">mkdir -p /greengrass-ml/images
+chmod <span class="hljs-number">0777</span> /greengrass-ml/images/
+</code></pre>
+<p class="has-line-data" data-line-start="223" data-line-end="224">Let us download amazon root cert</p>
+<pre><code class="has-line-data" data-line-start="225" data-line-end="228"><span class="hljs-built_in">cd</span> /greengrass/certs/
+wget -O root.ca.pem https://www.amazontrust.com/repository/AmazonRootCA1.pem
+</code></pre>
+<p class="has-line-data" data-line-start="229" data-line-end="230">[optional] check all dependencies for greengrass are installed</p>
+<pre><code class="has-line-data" data-line-start="231" data-line-end="238"><span class="hljs-built_in">cd</span> ~
+
+wget https://github.com/aws-samples/aws-greengrass-samples/raw/master/greengrass-dependency-checker-GGCv1.<span class="hljs-number">10</span>.x.zip
+unzip greengrass-dependency-checker-GGCv1.<span class="hljs-number">10</span>.x.zip
+<span class="hljs-built_in">cd</span> greengrass-dependency-checker-GGCv1.<span class="hljs-number">10</span>.x/
+./check_ggc_dependencies | more
+</code></pre>
+<p class="has-line-data" data-line-start="239" data-line-end="240">Start the greengrass core now</p>
+<pre><code class="has-line-data" data-line-start="241" data-line-end="245"><span class="hljs-built_in">cd</span> /greengrass/ggc/core
+./greengrassd start
+ps aux | grep greengrass
+</code></pre>
+<p class="has-line-data" data-line-start="246" data-line-end="247">Tail the logs</p>
+<pre><code class="has-line-data" data-line-start="248" data-line-end="250">tail <span class="hljs-operator">-f</span> /greengrass/ggc/var/<span class="hljs-built_in">log</span>/system/runtime.log
+</code></pre>
+<p class="has-line-data" data-line-start="251" data-line-end="252">Goto Greengrass Console &gt; your group &gt; Actions &gt; deploy &gt; Automatic Detection.</p>
+<pre><code class="has-line-data" data-line-start="254" data-line-end="257">tail <span class="hljs-operator">-f</span> /greengrass/ggc/var/<span class="hljs-built_in">log</span>/system/runtime.log
+tail <span class="hljs-operator">-f</span> /greengrass/ggc/var/<span class="hljs-built_in">log</span>/user/us-west-<span class="hljs-number">2</span>/&lt;accountID&gt;/greengrassObjectDetectionReinvent.log
+</code></pre>
+<p class="has-line-data" data-line-start="258" data-line-end="259">You will see some ERRORs in the logs because we have not copied any images for inference yet.</p>
+<p class="has-line-data" data-line-start="260" data-line-end="262">Test for inference<br>
+Example 1:</p>
+<pre><code class="has-line-data" data-line-start="263" data-line-end="266">wget -O /greengrass-ml/images/sample.jpeg &lt;&lt; DOWNLOAD AN IMAGE YOU WANT &gt;&gt;
+tail <span class="hljs-operator">-f</span> /greengrass/ggc/var/<span class="hljs-built_in">log</span>/user/us-west-<span class="hljs-number">2</span>/&lt;accountID&gt;/greengrassObjectDetectionReinvent.log
+</code></pre>
+<p class="has-line-data" data-line-start="266" data-line-end="268">you should see a similar output like this -<br>
+<img src="./ARC407_files/output.png" alt="output"></p>
+<p class="has-line-data" data-line-start="272" data-line-end="273">Example 2:</p>
+<pre><code class="has-line-data" data-line-start="274" data-line-end="277">wget -O /greengrass-ml/images/sample.jpeg &lt;&lt; DOWNLOAD AN IMAGE YOU WANT &gt;&gt;
+tail <span class="hljs-operator">-f</span> /greengrass/ggc/var/<span class="hljs-built_in">log</span>/user/us-west-<span class="hljs-number">2</span>/&lt;accountID&gt;/greengrassObjectDetectionReinvent.log
+</code></pre>
+<h3 class="code-line" data-line-start="279" data-line-end="280"><a id="Troubleshooting_279"></a>Troubleshooting</h3>
+<p class="has-line-data" data-line-start="281" data-line-end="287">If you see an error like this,<br>
+<code>[2019-10-29T19:52:45.945Z][ERROR]-runtime execution error: unable to start lambda container. {"errorString": "failed to run container sandbox: container_linux.go:344: starting container process caused \"exec: \\\"python2.7\\\": executable file not found in $PATH\""} [2019-10-29T19:52:45.946Z][ERROR]-Failed to start worker. {"workerId": "1c2f57d6-2ea1-4080-73bd-d475b9c9cf6a", "functionArn": "arn:aws:lambda:us-west-2:523344958585:function:ggObjectDetection:1", "errorString": "process start failed: failed to run container sandbox: container_linux.go:344: starting container process caused \"exec: \\\"python2.7\\\": executable file not found in $PATH\""}</code><br>
+Lets install these packages -</p>
+<pre><code class="has-line-data" data-line-start="288" data-line-end="294">sudo su -
+apt install python2.7
+apt install python-pip
+pip install mxnet
+pip install opencv-python
+</code></pre>
+<p class="has-line-data" data-line-start="294" data-line-end="295">—————————————————————————————————————————————————————————————————————————————————————————————</p>
+<h2 class="code-line" data-line-start="295" data-line-end="296"><a id="Optional_Module_5_Subscribe_to_IoT_Topic_for_Notifications_295"></a>[Optional] Module 5: Subscribe to IoT Topic for Notifications.</h2>
+<ol>
+<li class="has-line-data" data-line-start="297" data-line-end="298">Goto Greengrass &gt; Groups &gt; greengrassReInvent</li>
+<li class="has-line-data" data-line-start="298" data-line-end="299">Subscriptions</li>
+<li class="has-line-data" data-line-start="299" data-line-end="300">Add your first subscription</li>
+<li class="has-line-data" data-line-start="300" data-line-end="301">Select a source : Lambdas &gt; greengrassObjectDetection</li>
+<li class="has-line-data" data-line-start="301" data-line-end="302">Select a target : Services &gt; IoT Cloud</li>
+<li class="has-line-data" data-line-start="302" data-line-end="303">Next</li>
+<li class="has-line-data" data-line-start="303" data-line-end="304">Topic filter : counts</li>
+<li class="has-line-data" data-line-start="304" data-line-end="305">Finish</li>
+<li class="has-line-data" data-line-start="305" data-line-end="307">Actions &gt; Deploy</li>
+</ol>
+<p class="has-line-data" data-line-start="307" data-line-end="308">Once the deployment is complete,</p>
+<ol>
+<li class="has-line-data" data-line-start="309" data-line-end="310">Goto Greengrass &gt; Test &gt; Subscribe to a topic</li>
+<li class="has-line-data" data-line-start="310" data-line-end="311">Subscription topic : counts</li>
+<li class="has-line-data" data-line-start="311" data-line-end="312">Subscribe to topic</li>
+<li class="has-line-data" data-line-start="312" data-line-end="313">You should start seeing your messages now.</li>
+</ol>
+
+</body></html>

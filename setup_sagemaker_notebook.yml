@@ -1,0 +1,362 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation template for various IoT workshops. Creates SageMaker instance and bootstraps instances.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: EC2 Instance Types
+        Parameters:
+          - 02MLInstanceType
+    ParameterLabels:
+      02MLInstanceType:
+        default: 'EC2 Instance Type for Sagemaker: '
+Parameters:
+  02MLInstanceType:
+    Description: SageMaker instance type
+    Type: String
+    Default: ml.t2.medium
+    AllowedValues:
+      - ml.t2.large
+      - ml.t2.medium
+      - ml.m4.xlarge
+    ConstraintDescription: Must be a valid SageMaker instance type
+Mappings:
+  CONFIG:
+    C9-USER-DATA-SH:
+      VERSION: '20190502'
+Resources:
+
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 192.168.128.0/24
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: CFN Stack
+          Value: !Ref 'AWS::StackName'
+        - Key: Name
+          Value: IoT workshop 192.168.128.0/24
+  PubSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - a
+      CidrBlock: 192.168.128.0/25
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: CFN Stack
+          Value: !Ref 'AWS::StackName'
+        - Key: Name
+          Value: IoT workshop 192.168.128.0/25
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: CFN Stack
+          Value: !Ref 'AWS::StackName'
+        - Key: Name
+          Value: IoT workshop
+  GatewayToInternet:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn: GatewayToInternet
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: CFN Stack
+          Value: !Ref 'AWS::StackName'
+        - Key: Name
+          Value: IoT workshop
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PubSubnetRTAssoc:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PubSubnet
+      RouteTableId: !Ref PublicRouteTable
+  GGOtaS3UrlSignerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - iot.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Join
+            - '-'
+            - - GGOtaS3UrlSignerPolicy
+              - !Ref 'AWS::Region'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - 'arn:aws:s3:::eu-central-1-greengrass-updates/*'
+                  - 'arn:aws:s3:::eu-west-1-greengrass-updates/*'
+                  - 'arn:aws:s3:::us-east-1-greengrass-updates/*'
+                  - 'arn:aws:s3:::ap-northeast-1-greengrass-updates/*'
+                  - 'arn:aws:s3:::us-west-2-greengrass-updates/*'
+                  - 'arn:aws:s3:::ap-southeast-2-greengrass-updates/*'
+      Path: /
+  IoTWSS3Bucket:
+    Type: 'AWS::S3::Bucket'
+  IoTWSIoTPolicy:
+    Type: 'AWS::IoT::Policy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'iot:*'
+            Resource:
+              - '*'
+  IoTWSRegLambdaJITRRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Join
+            - ''
+            - - IoTWSRegLambdaJITRPolicy-
+              - !Ref 'AWS::Region'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'iot:CreateThing'
+                  - 'iot:UpdateCertificate'
+                  - 'iot:CreatePolicy'
+                  - 'iot:AttachPolicy'
+                  - 'iot:DescribeCertificate'
+                  - 'iot:AttachThingPrincipal'
+                Resource: '*'
+      Path: /
+  IoTWSIoTServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - iot.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSIoTThingsRegistration'
+        - 'arn:aws:iam::aws:policy/service-role/AWSIoTLogging'
+        - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
+      Path: /
+  IoTWSIAMUser:
+    Type: 'AWS::IAM::User'
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Join
+            - ''
+            - - IoTWSLambdaPolicy-
+              - !Ref 'AWS::Region'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:DescribeStackEvents'
+                  - 'cloudformation:DescribeStackResource'
+                  - 'cloudformation:DescribeStackResources'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:AssociateIamInstanceProfile'
+                  - 'ec2:ModifyInstanceAttribute'
+                  - 'ec2:ReplaceIamInstanceProfileAssociation'
+                  - 'iam:ListInstanceProfiles'
+                  - 'iam:PassRole'
+                  - 'ssm:DescribeInstanceInformation'
+                  - 'ssm:SendCommand'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource:
+                  - !GetAtt
+                    - IoTWSS3Bucket
+                    - Arn
+                  - !Join
+                    - ''
+                    - - !GetAtt
+                        - IoTWSS3Bucket
+                        - Arn
+                      - /*
+  IoTWSSageMakerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Enable access to port 22
+      Tags:
+        - Key: Name
+          Value: SageMaker IoT workshop
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+  IoTWSSageMakerExecRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - sagemaker.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSageMakerFullAccess'
+      Policies:
+        - PolicyName: IoTWSSageMakerInlinePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                  - 'iam:GetRole'
+                Resource: '*'
+  IoTWSSageMakerInstanceLifecycleConfig:
+    Type: 'AWS::SageMaker::NotebookInstanceLifecycleConfig'
+    Properties:
+      OnCreate:
+        - Content: !Base64
+            'Fn::Join':
+              - ''
+              - - |
+                  #!/bin/bash -v
+                - |
+                  date
+                - |
+                  echo LANG=en_US.utf-8 >> /etc/environment
+                - |
+                  echo LC_ALL=en_US.UTF-8 >> /etc/environment
+                - REGION=
+                - !Ref 'AWS::Region'
+                - |+
+
+                - S3_BUCKET=
+                - !Ref IoTWSS3Bucket
+                - |+
+                - |
+                  exit 0
+  IoTWSSageMakerInstance:
+    Type: 'AWS::SageMaker::NotebookInstance'
+    Properties:
+      InstanceType: !Ref 02MLInstanceType
+      SubnetId: !Ref PubSubnet
+      SecurityGroupIds:
+        - !Ref IoTWSSageMakerSecurityGroup
+      RoleArn: !GetAtt
+        - IoTWSSageMakerExecRole
+        - Arn
+      LifecycleConfigName: !GetAtt
+        - IoTWSSageMakerInstanceLifecycleConfig
+        - NotebookInstanceLifecycleConfigName
+      Tags:
+        - Key: Name
+          Value: IoT workshop
+Outputs:
+  SageMakerInstance:
+    Value: !Join
+      - ''
+      - - 'https://'
+        - !Ref 'AWS::Region'
+        - .console.aws.amazon.com/sagemaker/home?region=
+        - !Ref 'AWS::Region'
+        - '#/notebook-instances/openNotebook/'
+        - !GetAtt
+          - IoTWSSageMakerInstance
+          - NotebookInstanceName
+  S3Bucket:
+    Description: Name of the S3 Bucket for the IoT workshop
+    Value: !Ref IoTWSS3Bucket
+  IoTPolicy:
+    Description: Name of the IoT policy for JITP
+    Value: !Ref IoTWSIoTPolicy
+  ArnIoTProvRole:
+    Description: Role Arn for IoT device provisiong
+    Value: !GetAtt
+      - IoTWSIoTServiceRole
+      - Arn
+  ArnLambdaRole:
+    Description: Role Arn for the JITR Lambda function
+    Value: !GetAtt
+      - IoTWSRegLambdaJITRRole
+      - Arn
+  GGOtaS3UrlSignerRoleArn:
+    Description: >-
+      The IAM role arn for OTA which is used to presign the S3 url which links
+      to the Greengrass software update.
+    Value: !GetAtt
+      - GGOtaS3UrlSignerRole
+      - Arn
