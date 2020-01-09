@@ -176,13 +176,7 @@ In the AWS Greengrass console
 13.  Click the Machine Learning tab
 14.  Add a machine learning resource
 15.  Resource name: ObjectDetection
-16.  If the model training is still in progress, we will use an existing model for now. If the model training is complete, skip steps 17 to 22.
-17.  Choose _Upload a model in S3_ > click on Select
-18.  We will use an already trained model for now, and swap it if your training finishes in time. go and pick trained_model.tar.gz from here - s3://reinventsagemakernotebook-iotwss3bucket-<xxxxxxxx>/trained_model.tar.gz
-19.  Local path: /models/object-detection
-20.  Lambda function affiliations: Select greengrassObjectDetection
-21.  Leave Read-only access
-22.  Click Save
+16.  If the model training is still in progress, we will wait for it to finish and then jump to the next section.
 
 If the Sagemaker Training finishes, do this -
 
