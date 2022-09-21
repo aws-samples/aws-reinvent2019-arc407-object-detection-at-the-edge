@@ -119,6 +119,9 @@ Resources:
       Path: /
   IoTWSS3Bucket:
     Type: 'AWS::S3::Bucket'
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
   IoTWSIoTPolicy:
     Type: 'AWS::IoT::Policy'
     Properties:
